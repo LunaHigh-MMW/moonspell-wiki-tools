@@ -17,7 +17,7 @@ window.MM_API = {
     let allPages = {};
     for (const chunk of chunks) {
       try {
-        const res = await this.fetchWiki(
+        const res = await window.MM_API.fetchWiki(
           Object.assign({}, baseParams, { titles: chunk.join('|') })
         );
         if (res.query && res.query.pages) {
@@ -43,7 +43,7 @@ window.MM_API = {
           cmlimit: 500
         };
         if (cmcontinue) params.cmcontinue = cmcontinue;
-        const data = await this.fetchWiki(params);
+        const data = await window.MM_API.fetchWiki(params);
         const members = (data.query && data.query.categorymembers) || [];
         members.forEach((m) => membersList.push(m.title));
         cmcontinue = data.continue && data.continue.cmcontinue;
@@ -57,7 +57,7 @@ window.MM_API = {
   async getPagesImages(pageTitles) {
     const usedImages = new Set();
     if (!pageTitles || pageTitles.length === 0) return usedImages;
-    const pages = await this.fetchWikiChunks(
+    const pages = await window.MM_API.fetchWikiChunks(
       pageTitles,
       { action: 'query', prop: 'images', imlimit: 500 },
       50

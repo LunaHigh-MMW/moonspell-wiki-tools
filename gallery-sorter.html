@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Moonspell Magic — Gallery Sorter</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="stylesheet" href="theme.css">
+    <script src="config.js"></script>
+    <script src="wiki-api.js"></script>
+    <style>
+        .gallery-container {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            gap: 12px;
+            min-height: 0;
+        }
+
+        #input-code {
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--accentSmall);
+            font-family: monospace;
+            font-size: 11px;
+            padding: 10px;
+            resize: none;
+            height: 70px;
+            box-sizing: border-box;
+        }
+
+        #input-code:focus {
+            outline: none;
+            border-color: var(--accentSmall);
+        }
+
+        .gallery-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            padding: 8px 12px;
+            border-radius: 6px;
+            flex-wrap: wrap;
+        }
+
+        #selCount {
+            margin-left: auto;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+
+        .gallery-grid {
+            flex: 1;
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 12px;
+            overflow-y: auto;
+            align-content: start;
+        }
+
+        .item {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            position: relative;
+            cursor: pointer;
+            user-select: none;
+            transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+        }
+
+        .item:hover {
+            border-color: var(--accentSmall);
+        }
+
+        .item.selected {
+            background: rgba(118, 88, 172, 0.15);
+            border-color: var(--accentLarge);
+            box-shadow: 0 0 8px rgba(118, 88, 172, 0.3);
+        }
+
+        .item.dragging {
+            opacity: 0.4;
+        }
+
+        .remove-btn {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            background: rgba(21, 21, 31, 0.85);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            z-index: 2;
+        }
+
+        .remove-btn:hover {
+            color: #fff;
+            background: rgba(255, 82, 82, 0.8);
+            border-color: var(--error);
+        }
+
+        .item img {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+            border-radius: 4px;
+            background: #0d0d14;
+            border: 1px solid var(--border);
+        }
+
+        .item-text {
+            font-size: 11px;
+            color: var(--text);
+            word-break: break-all;
+            line-height: 1.3;
+        }
+
+        .item-text b {
+            color: var(--accentBright);
+            display: block;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="header-left">
+        <h1>Moonspell Magic — Gallery Sorter</h1>
+        <div class="fast-links" id="tools-nav"></div>
+    </div>
+    <div class="header-actions">
+        <a href="index.html" class="btn-sync">Back to Menu</a>
+    </div>
+</header>
+
+<div class="gallery-container">
+    <textarea id="input-code" placeholder="Paste <gallery> code here..."></textarea>
+
+    <div class="gallery-controls">
+        <button class="btn-sync primary" onclick="parseGallery()">Load</button>
+        <button class="btn-sync" id="moveTopBtn" onclick="moveSelectedToTop()" disabled>Move to Top ↑</button>
+        <button class="btn-sync" id="copyResultBtn" onclick="copyResult()">Copy Code</button>
+        <button class="btn-sync" onclick="clearSelection()">Clear Selection</button>
+        <span id="selCount">Selected: 0</span>
+    </div>
+
+    <div id="gallery-grid" class="gallery-grid">
+        <div class="clean-state">Paste gallery wikitext above and click "Load".</div>
+    </div>
+</div>
+
+<script>
+    const { IMG_PATH_BASE } = window.MM_CONFIG;
+    const { escapeHtml, flashButtonText, renderNav } = window.MM_API;
+
+    const grid = document.getElementById('gallery-grid');
+    const selCountText = document.getElementById('selCount');
+    const moveTopBtn = document.getElementById('moveTopBtn');
+
+    function parseGallery() {
+        const code = document.getElementById('input-code').value;
+        grid.innerHTML = '';
+        const lines = code.split('\n');
+
+        let addedCount = 0;
+        lines.forEach(line => {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('<') || trimmed.startsWith('</')) return;
+            const parts = trimmed.split('|');
+            createCard(parts[0].trim(), parts[1] ? parts[1].trim() : '');
+            addedCount++;
+        });
+
+        if (addedCount === 0) {
+            grid.innerHTML = '<div class="clean-state">No items found. Check your <gallery> markup.</div>';
+        }
+        updateSelectionUI();
+    }
+
+    function createCard(fileName, caption) {
+        const div = document.createElement('div');
+        div.className = 'item';
+        div.draggable = true;
+        div.dataset.filename = fileName;
+        div.dataset.caption = caption;
+
+        const safeName = escapeHtml(fileName);
+        const safeCaption = escapeHtml(caption);
+
+        div.innerHTML = `
+            <div class="remove-btn" onclick="event.stopPropagation(); this.parentElement.remove(); updateSelectionUI(); checkEmptyGrid();">×</div>
+            <img src="${IMG_PATH_BASE}${encodeURIComponent(fileName)}?width=180" loading="lazy" alt="${safeName}">
+            <div class="item-text">
+                <b>${safeName}</b>
+                ${caption ? `<br><i style="color:var(--accentSmall)">| ${safeCaption}</i>` : ''}
+            </div>
+        `;
+
+        div.addEventListener('click', (e) => {
+            if (e.target.classList.contains('remove-btn')) return;
+            div.classList.toggle('selected');
+            updateSelectionUI();
+        });
+
+        div.addEventListener('dragstart', (e) => {
+            if (!div.classList.contains('selected')) {
+                clearSelection();
+                div.classList.add('selected');
+            }
+            e.dataTransfer.setData('text/plain', 'drag');
+            document.querySelectorAll('.selected').forEach(el => el.classList.add('dragging'));
+        });
+
+        div.addEventListener('dragend', () => {
+            document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+        });
+
+        grid.appendChild(div);
+    }
+
+    function checkEmptyGrid() {
+        if (grid.querySelectorAll('.item').length === 0) {
+            grid.innerHTML = '<div class="clean-state">Gallery is empty.</div>';
+        }
+    }
+
+    function updateSelectionUI() {
+        const selected = document.querySelectorAll('.item.selected').length;
+        selCountText.textContent = `Selected: ${selected}`;
+        moveTopBtn.disabled = selected === 0;
+    }
+
+    function clearSelection() {
+        document.querySelectorAll('.item.selected').forEach(el => el.classList.remove('selected'));
+        updateSelectionUI();
+    }
+
+    function moveSelectedToTop() {
+        const selected = document.querySelectorAll('.item.selected');
+        for (let i = selected.length - 1; i >= 0; i--) {
+            grid.prepend(selected[i]);
+        }
+        clearSelection();
+        grid.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    grid.addEventListener('dragover', e => {
+        e.preventDefault();
+        const afterElement = getDragAfterElement(grid, e.clientX, e.clientY);
+        const draggingElements = document.querySelectorAll('.selected');
+        draggingElements.forEach(el => {
+            if (afterElement == null) grid.appendChild(el);
+            else grid.insertBefore(el, afterElement);
+        });
+    });
+
+    function getDragAfterElement(container, x, y) {
+        const draggableElements = [...container.querySelectorAll('.item:not(.selected)')];
+        return draggableElements.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const centerX = box.left + box.width / 2;
+            const centerY = box.top + box.height / 2;
+            const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+            return distance < closest.offset ? { offset: distance, element: child } : closest;
+        }, { offset: Number.POSITIVE_INFINITY }).element;
+    }
+
+    function copyResult() {
+        const items = grid.querySelectorAll('.item');
+        const btn = document.getElementById('copyResultBtn');
+        if (!btn) return;
+        if (items.length === 0) {
+            flashButtonText(btn, 'Empty');
+            return;
+        }
+        let result = '<gallery mode="packed" widths="185">\n';
+        items.forEach(item => {
+            result += item.dataset.filename + (item.dataset.caption ? ' | ' + item.dataset.caption : '') + '\n';
+        });
+        result += '</gallery>';
+        navigator.clipboard.writeText(result).then(() => {
+            flashButtonText(btn, 'Copied!');
+        });
+    }
+
+    window.onload = () => {
+        renderNav('tools-nav');
+    };
+</script>
+</body>
+</html>

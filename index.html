@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wiki Core Terminal</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="stylesheet" href="theme.css">
+  <script src="config.js"></script>
+  <script src="wiki-api.js"></script>
+  <style>
+    .hud-menu {
+      width: 280px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      overflow-y: auto;
+    }
+
+    .menu-item {
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      border-radius: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .menu-item.hidden {
+      display: none;
+    }
+
+    .menu-item.active {
+      border-color: var(--accentLarge);
+      background: var(--overlay);
+    }
+
+    .menu-item .title {
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .status-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--error);
+      background: rgba(255, 82, 82, 0.1);
+    }
+
+    .status-badge.loading {
+      color: var(--accentSmall);
+      background: none;
+    }
+
+    .monitor-content {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .grid-output {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 8px;
+    }
+
+    .grid-output a {
+      font-size: 12px;
+      color: var(--accentSmall);
+      text-decoration: none;
+      padding: 6px 10px;
+      background: rgba(118, 88, 172, 0.04);
+      border-radius: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      border: 1px solid transparent;
+    }
+
+    .grid-output a:hover {
+      color: var(--accentBright);
+      background: var(--overlay);
+      border-color: var(--accentLarge);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-left">
+      <h1>Moonspell Magic Wiki — Core Terminal</h1>
+      <div class="fast-links" id="tools-nav"></div>
+    </div>
+    <button class="btn-sync" onclick="refreshAll()">Scan Systems</button>
+  </header>
+
+  <div class="hud-container">
+
+    <div class="hud-menu" id="main-menu">
+      <div class="menu-item" id="mod-broken-redirects" onclick="switchTab('broken-redirects')">
+        <span class="title">Broken Redirects</span>
+        <span class="status-badge loading">...</span>
+      </div>
+      <div class="menu-item" id="mod-double-redirects" onclick="switchTab('double-redirects')">
+        <span class="title">Double Redirects</span>
+        <span class="status-badge loading">...</span>
+      </div>
+      <div class="menu-item" id="mod-legacy-infoboxes" onclick="switchTab('legacy-infoboxes')">
+        <span class="title">Legacy Infoboxes</span>
+        <span class="status-badge loading">...</span>
+      </div>
+      <div class="menu-item" id="mod-uncategorized-categories" onclick="switchTab('uncategorized-categories')">
+        <span class="title">Uncategorized Categories</span>
+        <span class="status-badge loading">...</span>
+      </div>
+      <div class="menu-item" id="mod-uncategorized-pages" onclick="switchTab('uncategorized-pages')">
+        <span class="title">Uncategorized Pages</span>
+        <span class="status-badge loading">...</span>
+      </div>
+      <div class="menu-item" id="mod-uncategorized-files" onclick="switchTab('uncategorized-files')">
+        <span class="title">Uncategorized Files</span>
+        <span class="status-badge loading">...</span>
+      </div>
+      <div class="menu-item" id="mod-uncategorized-templates" onclick="switchTab('uncategorized-templates')">
+        <span class="title">Uncategorized Templates</span>
+        <span class="status-badge loading">...</span>
+      </div>
+      <div class="menu-item" id="mod-unused-categories" onclick="switchTab('unused-categories')">
+        <span class="title">Unused Categories</span>
+        <span class="status-badge loading">...</span>
+      </div>
+      <div class="menu-item" id="mod-unused-files" onclick="switchTab('unused-files')">
+        <span class="title">Unused Live Files</span>
+        <span class="status-badge loading">...</span>
+      </div>
+      <div class="menu-item" id="mod-unused-templates" onclick="switchTab('unused-templates')">
+        <span class="title">Unused Templates</span>
+        <span class="status-badge loading">...</span>
+      </div>
+      <div class="menu-item" id="mod-wanted-categories" onclick="switchTab('wanted-categories')">
+        <span class="title">Wanted Categories</span>
+        <span class="status-badge loading">...</span>
+      </div>
+      <div class="menu-item" id="mod-wanted-files" onclick="switchTab('wanted-files')">
+        <span class="title">Wanted Files</span>
+        <span class="status-badge loading">...</span>
+      </div>
+      <div class="menu-item" id="mod-wanted-pages" onclick="switchTab('wanted-pages')">
+        <span class="title">Wanted Pages</span>
+        <span class="status-badge loading">...</span>
+      </div>
+      <div class="menu-item" id="mod-wanted-templates" onclick="switchTab('wanted-templates')">
+        <span class="title">Wanted Templates</span>
+        <span class="status-badge loading">...</span>
+      </div>
+    </div>
+
+    <div class="hud-monitor">
+      <div class="monitor-header" id="monitor-title">Analyzing...</div>
+      <div class="monitor-content" id="monitor-body">
+        <div class="clean-state">Initializing Core...</div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const { WIKI_BASE } = window.MM_CONFIG;
+    const { fetchWiki, fetchWikiChunks, renderNav } = window.MM_API;
+
+    const storage = {
+      'broken-redirects': { title: 'Broken Redirects', data: [], loaded: false },
+      'double-redirects': { title: 'Double Redirects', data: [], loaded: false },
+      'legacy-infoboxes': { title: 'Legacy Table Infoboxes', data: [], loaded: false },
+      'uncategorized-categories': { title: 'Uncategorized Categories', data: [], loaded: false },
+      'uncategorized-pages': { title: 'Uncategorized Pages', data: [], loaded: false },
+      'uncategorized-files': { title: 'Uncategorized Files', data: [], loaded: false },
+      'uncategorized-templates': { title: 'Uncategorized Templates', data: [], loaded: false },
+      'unused-categories': { title: 'Empty Unused Categories', data: [], loaded: false },
+      'unused-files': { title: 'Unused Live Files', data: [], loaded: false },
+      'unused-templates': { title: 'Unused Templates', data: [], loaded: false },
+      'wanted-categories': { title: 'Wanted Categories', data: [], loaded: false },
+      'wanted-files': { title: 'Wanted Files', data: [], loaded: false },
+      'wanted-pages': { title: 'Wanted Pages', data: [], loaded: false },
+      'wanted-templates': { title: 'Wanted Templates', data: [], loaded: false }
+    };
+
+    let currentTab = null;
+
+    function updateSystemStatus(tabKey, items) {
+      storage[tabKey].data = items;
+      storage[tabKey].loaded = true;
+
+      const el = document.getElementById(`mod-${tabKey}`);
+      if (!el) return;
+      const badge = el.querySelector('.status-badge');
+
+      if (items.length === 0) {
+        el.classList.add('hidden');
+      } else {
+        el.classList.remove('hidden');
+        badge.className = 'status-badge';
+        badge.textContent = `${items.length}`;
+      }
+
+      autoSelectTab();
+    }
+
+    function autoSelectTab() {
+      const allLoaded = Object.values(storage).every(s => s.loaded);
+      if (!allLoaded) return;
+
+      const activeKeys = Object.keys(storage).filter(k => storage[k].data.length > 0);
+
+      if (activeKeys.length === 0) {
+        currentTab = null;
+        document.getElementById('monitor-title').textContent = 'System Status';
+        document.getElementById('monitor-body').innerHTML = `
+          <div class="clean-state">
+            <div class="icon">✓</div>
+            All systems nominal.<br>No actions required.
+          </div>`;
+        return;
+      }
+
+      if (!currentTab || storage[currentTab].data.length === 0) {
+        switchTab(activeKeys[0]);
+      } else {
+        renderMonitor();
+      }
+    }
+
+    function switchTab(tabKey) {
+      currentTab = tabKey;
+      document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
+      const activeEl = document.getElementById(`mod-${tabKey}`);
+      if (activeEl) activeEl.classList.add('active');
+      renderMonitor();
+    }
+
+    function renderMonitor() {
+      if (!currentTab) return;
+      const titleEl = document.getElementById('monitor-title');
+      const bodyEl = document.getElementById('monitor-body');
+      const activeTab = storage[currentTab];
+
+      titleEl.textContent = `Anomalies Detected: ${activeTab.title}`;
+      bodyEl.innerHTML = `
+        <div class="grid-output">
+          ${activeTab.data.map(item => `<a href="${WIKI_BASE}${encodeURIComponent(item)}" target="_blank" title="${item}">${item}</a>`).join('')}
+        </div>
+      `;
+    }
+
+    async function scanBrokenRedirects() {
+      try {
+        const d = await fetchWiki({ action: 'query', list: 'querypage', qppage: 'BrokenRedirects', qplimit: 500 });
+        const pages = d.query?.querypage?.results?.map(p => p.title) || [];
+        pages.sort();
+        updateSystemStatus('broken-redirects', pages);
+      } catch { updateSystemStatus('broken-redirects', []); }
+    }
+
+    async function scanDoubleRedirects() {
+      try {
+        const d = await fetchWiki({ action: 'query', list: 'querypage', qppage: 'DoubleRedirects', qplimit: 100 });
+        const pages = d.query?.querypage?.results?.map(p => p.title) || [];
+
+        if (pages.length === 0) {
+          updateSystemStatus('double-redirects', []);
+          return;
+        }
+
+        const infoPages = await fetchWikiChunks(pages, {
+          action: 'query',
+          prop: 'revisions',
+          rvprop: 'content',
+          rvslots: 'main'
+        });
+
+        const targetsToCheck = [];
+        const redirectMap = {};
+
+        for (const id in infoPages) {
+          const page = infoPages[id];
+          if (parseInt(id) > 0 && !page.hasOwnProperty('missing')) {
+            const wikitext = page.revisions?.[0]?.slots?.main?.['*'] || '';
+            const match = wikitext.match(/#REDIRECT\s*\[\[\s*([^\]|]+)/i);
+            if (match) {
+              const target = match[1].trim();
+              redirectMap[page.title] = target;
+              targetsToCheck.push(target);
+            }
+          }
+        }
+
+        if (targetsToCheck.length === 0) {
+          updateSystemStatus('double-redirects', []);
+          return;
+        }
+
+        const targetPages = await fetchWikiChunks(targetsToCheck, {
+          action: 'query',
+          prop: 'info'
+        });
+
+        const realDoubleRedirects = [];
+
+        for (const sourceTitle in redirectMap) {
+          const targetTitle = redirectMap[sourceTitle];
+          const targetPage = Object.values(targetPages).find(p => p.title && p.title.toLowerCase() === targetTitle.toLowerCase());
+
+          if (targetPage && targetPage.hasOwnProperty('redirect') && parseInt(targetPage.pageid) > 0) {
+            realDoubleRedirects.push(sourceTitle);
+          }
+        }
+
+        realDoubleRedirects.sort();
+        updateSystemStatus('double-redirects', realDoubleRedirects);
+      } catch { updateSystemStatus('double-redirects', []); }
+    }
+
+    async function scanLegacyInfoboxes() {
+      try {
+        const d = await fetchWiki({ action: 'query', list: 'search', srsearch: 'insource:/\\{\\|.*wikitable.*Infobox/|insource:"table" class="portable-infobox"', srnamespace: '10', srlimit: 100 });
+        updateSystemStatus('legacy-infoboxes', d.query?.search?.map(r => r.title) || []);
+      } catch { updateSystemStatus('legacy-infoboxes', []); }
+    }
+
+    async function scanUncategorizedCategories() {
+      try {
+        const d = await fetchWiki({ action: 'query', list: 'querypage', qppage: 'Uncategorizedcategories', qplimit: 1000 });
+        const pages = d.query?.querypage?.results?.map(p => p.title) || [];
+
+        const ignore = ['category:moonspell magic wiki'];
+        const filteredPages = pages.filter(t => !ignore.includes(t.toLowerCase()));
+
+        if (filteredPages.length === 0) {
+          updateSystemStatus('uncategorized-categories', []);
+          return;
+        }
+
+        const infoPages = await fetchWikiChunks(filteredPages, {
+          action: 'query',
+          prop: 'categories',
+          cllimit: 50
+        });
+
+        const realUncategorizedCats = [];
+
+        for (const id in infoPages) {
+          const page = infoPages[id];
+          if (parseInt(id) > 0 && !page.hasOwnProperty('missing')) {
+            const cats = page.categories || [];
+            if (cats.length === 0 && !ignore.includes(page.title.toLowerCase())) {
+              realUncategorizedCats.push(page.title);
+            }
+          }
+        }
+
+        realUncategorizedCats.sort();
+        updateSystemStatus('uncategorized-categories', realUncategorizedCats);
+      } catch { updateSystemStatus('uncategorized-categories', []); }
+    }
+
+    async function scanUncategorizedPages() {
+      try {
+        const d = await fetchWiki({ action: 'query', list: 'querypage', qppage: 'Uncategorizedpages', qplimit: 1000 });
+        const pages = d.query?.querypage?.results?.map(p => p.title) || [];
+
+        if (pages.length === 0) {
+          updateSystemStatus('uncategorized-pages', []);
+          return;
+        }
+
+        const infoPages = await fetchWikiChunks(pages, {
+          action: 'query',
+          prop: 'categories',
+          cllimit: 50
+        });
+
+        const realUncategorized = [];
+
+        for (const id in infoPages) {
+          const page = infoPages[id];
+          if (parseInt(id) <= 0 || page.hasOwnProperty('missing')) {
+            continue;
+          }
+
+          const cats = page.categories || [];
+          const realCats = cats.filter(c => !c.title.toLowerCase().includes('pages with broken file links'));
+
+          if (realCats.length === 0) {
+            realUncategorized.push(page.title);
+          }
+        }
+
+        realUncategorized.sort();
+        updateSystemStatus('uncategorized-pages', realUncategorized);
+      } catch { updateSystemStatus('uncategorized-pages', []); }
+    }
+
+    async function scanUncategorizedFiles() {
+      try {
+        const d = await fetchWiki({ action: 'query', list: 'querypage', qppage: 'Uncategorizedimages', qplimit: 500 });
+        const files = d.query?.querypage?.results?.map(p => p.title) || [];
+
+        if (files.length === 0) {
+          updateSystemStatus('uncategorized-files', []);
+          return;
+        }
+
+        const infoPages = await fetchWikiChunks(files, {
+          action: 'query',
+          prop: 'categories',
+          cllimit: 50
+        });
+
+        const realUncategorizedFiles = [];
+
+        for (const id in infoPages) {
+          const page = infoPages[id];
+          if (parseInt(id) > 0 && !page.hasOwnProperty('missing')) {
+            const cats = page.categories || [];
+            if (cats.length === 0) {
+              realUncategorizedFiles.push(page.title);
+            }
+          }
+        }
+
+        realUncategorizedFiles.sort();
+        updateSystemStatus('uncategorized-files', realUncategorizedFiles);
+      } catch { updateSystemStatus('uncategorized-files', []); }
+    }
+
+    async function scanUncategorizedTemplates() {
+      try {
+        const d = await fetchWiki({ action: 'query', list: 'querypage', qppage: 'Uncategorizedtemplates', qplimit: 500 });
+        const templates = d.query?.querypage?.results?.map(p => p.title) || [];
+
+        if (templates.length === 0) {
+          updateSystemStatus('uncategorized-templates', []);
+          return;
+        }
+
+        const infoPages = await fetchWikiChunks(templates, {
+          action: 'query',
+          prop: 'categories',
+          cllimit: 50
+        });
+
+        const realUncategorizedTemplates = [];
+
+        for (const id in infoPages) {
+          const page = infoPages[id];
+          if (parseInt(id) > 0 && !page.hasOwnProperty('missing')) {
+            const cats = page.categories || [];
+            if (cats.length === 0) {
+              realUncategorizedTemplates.push(page.title);
+            }
+          }
+        }
+
+        realUncategorizedTemplates.sort();
+        updateSystemStatus('uncategorized-templates', realUncategorizedTemplates);
+      } catch { updateSystemStatus('uncategorized-templates', []); }
+    }
+
+    async function scanUnusedCategories() {
+      try {
+        const d = await fetchWiki({ action: 'query', list: 'querypage', qppage: 'Unusedcategories', qplimit: 500 });
+        const pages = d.query?.querypage?.results?.map(p => p.title) || [];
+
+        if (pages.length === 0) {
+          updateSystemStatus('unused-categories', []);
+          return;
+        }
+
+        const ignore = [
+          'category:articles pending review',
+          'category:incomplete articles',
+          'category:stub articles',
+          'category:disambiguations',
+          'category:hatnote templates with errors',
+          'category:pages with broken file links'
+        ];
+
+        const filteredPages = pages.filter(t => !ignore.includes(t.toLowerCase()));
+
+        if (filteredPages.length === 0) {
+          updateSystemStatus('unused-categories', []);
+          return;
+        }
+
+        const infoPages = await fetchWikiChunks(filteredPages, {
+          action: 'query',
+          prop: 'info'
+        });
+
+        const realExistingCategories = [];
+
+        for (const id in infoPages) {
+          if (parseInt(id) > 0 && !infoPages[id].hasOwnProperty('missing')) {
+            realExistingCategories.push(infoPages[id].title);
+          }
+        }
+
+        realExistingCategories.sort();
+        updateSystemStatus('unused-categories', realExistingCategories);
+      } catch { updateSystemStatus('unused-categories', []); }
+    }
+
+    async function scanUnusedFiles() {
+      try {
+        const d = await fetchWiki({ action: 'query', list: 'querypage', qppage: 'Unusedimages', qplimit: 100 });
+        const fileTitles = d.query?.querypage?.results?.map(p => p.title) || [];
+
+        if (fileTitles.length === 0) {
+          updateSystemStatus('unused-files', []);
+          return;
+        }
+
+        const pages = await fetchWikiChunks(fileTitles, {
+          action: 'query',
+          prop: 'imageinfo'
+        });
+
+        const realExistingFiles = [];
+
+        for (const id in pages) {
+          if (parseInt(id) > 0 && !pages[id].hasOwnProperty('missing')) {
+            realExistingFiles.push(pages[id].title);
+          }
+        }
+        updateSystemStatus('unused-files', realExistingFiles);
+      } catch { updateSystemStatus('unused-files', []); }
+    }
+
+    async function scanUnusedTemplates() {
+      try {
+        const d = await fetchWiki({ action: 'query', list: 'querypage', qppage: 'Unusedtemplates', qplimit: 500 });
+        const pages = d.query?.querypage?.results?.map(p => p.title) || [];
+
+        const ignore = [
+          'template:autofill', 'template:delete', 'template:disambiguation',
+          'template:mit', 'template:nolicense', 'template:other free',
+          'template:permission', 'template:stub', 'template:tocright',
+          'template:pd', 'template:cc-by-sa',
+        ];
+
+        const basicFiltered = pages.filter(t => !ignore.includes(t.toLowerCase()));
+
+        if (basicFiltered.length === 0) {
+          updateSystemStatus('unused-templates', []);
+          return;
+        }
+
+        const infoPages = await fetchWikiChunks(basicFiltered, {
+          action: 'query'
+        });
+
+        const existingTemplates = [];
+
+        for (const id in infoPages) {
+          if (parseInt(id) > 0 && !infoPages[id].hasOwnProperty('missing')) {
+            existingTemplates.push(infoPages[id].title);
+          }
+        }
+
+        if (existingTemplates.length === 0) {
+          updateSystemStatus('unused-templates', []);
+          return;
+        }
+
+        const finalRealUnused = [];
+
+        await Promise.all(existingTemplates.map(async (templateTitle) => {
+          try {
+            const linkCheck = await fetchWiki({
+              action: 'query',
+              list: 'embeddedin',
+              eititle: templateTitle,
+              eilimit: 1
+            });
+
+            const usages = linkCheck.query?.embeddedin || [];
+            if (usages.length === 0) {
+              finalRealUnused.push(templateTitle);
+            }
+          } catch (e) {
+            finalRealUnused.push(templateTitle);
+          }
+        }));
+
+        finalRealUnused.sort();
+        updateSystemStatus('unused-templates', finalRealUnused);
+      } catch { updateSystemStatus('unused-templates', []); }
+    }
+
+    async function scanWantedCategories() {
+      try {
+        const d = await fetchWiki({ action: 'query', list: 'querypage', qppage: 'Wantedcategories', qplimit: 500 });
+        const pages = d.query?.querypage?.results?.map(p => p.title) || [];
+
+        if (pages.length === 0) {
+          updateSystemStatus('wanted-categories', []);
+          return;
+        }
+
+        const infoPages = await fetchWikiChunks(pages, {
+          action: 'query',
+          prop: 'info'
+        });
+
+        const realWantedCats = [];
+
+        for (const id in infoPages) {
+          const page = infoPages[id];
+          if (parseInt(id) < 0 || page.hasOwnProperty('missing')) {
+            realWantedCats.push(page.title);
+          }
+        }
+
+        realWantedCats.sort();
+        updateSystemStatus('wanted-categories', realWantedCats);
+      } catch { updateSystemStatus('wanted-categories', []); }
+    }
+
+    async function scanWantedFiles() {
+      try {
+        const d = await fetchWiki({ action: 'query', list: 'querypage', qppage: 'Wantedimages', qplimit: 500 });
+        const pages = d.query?.querypage?.results?.map(p => p.title) || [];
+
+        if (pages.length === 0) {
+          updateSystemStatus('wanted-files', []);
+          return;
+        }
+
+        const infoPages = await fetchWikiChunks(pages, {
+          action: 'query',
+          prop: 'info'
+        });
+
+        const realWantedFiles = [];
+
+        for (const id in infoPages) {
+          const page = infoPages[id];
+          if (parseInt(id) < 0 || page.hasOwnProperty('missing')) {
+            realWantedFiles.push(page.title);
+          }
+        }
+
+        realWantedFiles.sort();
+        updateSystemStatus('wanted-files', realWantedFiles);
+      } catch { updateSystemStatus('wanted-files', []); }
+    }
+
+    async function scanWantedPages() {
+      try {
+        const d = await fetchWiki({ action: 'query', list: 'querypage', qppage: 'Wantedpages', qplimit: 500 });
+        const pages = d.query?.querypage?.results?.map(p => p.title) || [];
+
+        if (pages.length === 0) {
+          updateSystemStatus('wanted-pages', []);
+          return;
+        }
+
+        const infoPages = await fetchWikiChunks(pages, {
+          action: 'query',
+          prop: 'info'
+        });
+
+        const realWantedPages = [];
+
+        for (const id in infoPages) {
+          const page = infoPages[id];
+          if (parseInt(id) < 0 || page.hasOwnProperty('missing')) {
+            realWantedPages.push(page.title);
+          }
+        }
+
+        realWantedPages.sort();
+        updateSystemStatus('wanted-pages', realWantedPages);
+      } catch { updateSystemStatus('wanted-pages', []); }
+    }
+
+    async function scanWantedTemplates() {
+      try {
+        const d = await fetchWiki({ action: 'query', list: 'querypage', qppage: 'Wantedtemplates', qplimit: 500 });
+        const pages = d.query?.querypage?.results?.map(p => p.title) || [];
+
+        if (pages.length === 0) {
+          updateSystemStatus('wanted-templates', []);
+          return;
+        }
+
+        const infoPages = await fetchWikiChunks(pages, {
+          action: 'query',
+          prop: 'info'
+        });
+
+        const realWantedTemplates = [];
+
+        for (const id in infoPages) {
+          const page = infoPages[id];
+          if (parseInt(id) < 0 || page.hasOwnProperty('missing')) {
+            realWantedTemplates.push(page.title);
+          }
+        }
+
+        realWantedTemplates.sort();
+        updateSystemStatus('wanted-templates', realWantedTemplates);
+      } catch { updateSystemStatus('wanted-templates', []); }
+    }
+
+    function refreshAll() {
+      currentTab = null;
+      document.getElementById('monitor-title').textContent = 'Scanning...';
+      document.getElementById('monitor-body').innerHTML = `<div class="clean-state">Pulling live data from Fandom API...</div>`;
+
+      Object.keys(storage).forEach(k => {
+        storage[k].loaded = false;
+        const el = document.getElementById(`mod-${k}`);
+        if (el) {
+          el.classList.remove('hidden');
+          const badge = el.querySelector('.status-badge');
+          badge.className = 'status-badge loading';
+          badge.textContent = '...';
+        }
+      });
+
+      scanBrokenRedirects();
+      scanDoubleRedirects();
+      scanLegacyInfoboxes();
+      scanUncategorizedCategories();
+      scanUncategorizedPages();
+      scanUncategorizedFiles();
+      scanUncategorizedTemplates();
+      scanUnusedCategories();
+      scanUnusedFiles();
+      scanUnusedTemplates();
+      scanWantedCategories();
+      scanWantedFiles();
+      scanWantedPages();
+      scanWantedTemplates();
+    }
+
+    window.onload = () => {
+      renderNav('tools-nav');
+      refreshAll();
+    };
+  </script>
+</body>
+</html>

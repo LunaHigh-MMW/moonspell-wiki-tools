@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Moonspell Magic — Autofill Hub</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="stylesheet" href="theme.css">
+  <script src="config.js"></script>
+  <script src="wiki-api.js"></script>
+  <style>
+    .mode-switch {
+      display: inline-flex;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-right: 4px;
+    }
+
+    .mode-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 5px 10px;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: all 0.15s ease;
+    }
+
+    .mode-btn.active {
+      background: var(--accentLarge);
+      color: #fff;
+    }
+
+    .btn-sync.awb {
+      background: #00e676;
+      color: #000;
+      border-color: #00e676;
+    }
+
+    .btn-sync.awb:hover {
+      opacity: 0.9;
+    }
+
+    .brush-bar {
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .brush-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--accentBright);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .brush-mode-toggle {
+      display: flex;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .brush-mode-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      cursor: pointer;
+      text-transform: uppercase;
+    }
+
+    .brush-mode-btn.active {
+      background: var(--accentLarge);
+      color: #fff;
+    }
+
+    .brush-tags-container {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      flex: 1;
+      align-items: center;
+    }
+
+    .brush-chip {
+      background: rgba(118, 88, 172, 0.1);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 500;
+      padding: 3px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.15s ease;
+    }
+
+    .brush-chip:hover {
+      border-color: var(--accentSmall);
+      background: rgba(118, 88, 172, 0.25);
+    }
+
+    .brush-chip.selected {
+      background: #00e676;
+      color: #000;
+      border-color: #00e676;
+      font-weight: 700;
+      box-shadow: 0 0 8px rgba(0, 230, 118, 0.4);
+    }
+
+    .monitor-content {
+      flex: 1;
+      overflow-y: auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+      gap: 14px;
+      padding-right: 4px;
+      align-content: start;
+    }
+
+    .file-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      position: relative;
+    }
+
+    .card-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .file-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accentBright);
+      text-decoration: none;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+
+    .file-title:hover {
+      text-decoration: underline;
+    }
+
+    .btn-skip {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn-skip:hover {
+      color: var(--error);
+      border-color: rgba(255, 82, 82, 0.4);
+      background: rgba(255, 82, 82, 0.1);
+    }
+
+    .file-preview-container {
+      width: 100%;
+      height: 220px;
+      background: #0d0d14;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      cursor: zoom-in;
+      position: relative;
+    }
+
+    body.brush-active .file-preview-container {
+      cursor: crosshair;
+      border-color: #00e676;
+    }
+
+    body.brush-active .file-preview-container::after {
+      content: "Click to Apply Tag";
+      background: rgba(0, 230, 118, 0.85);
+      color: #000;
+      font-weight: 700;
+      border-color: #00e676;
+    }
+
+    .file-preview-container::after {
+      content: "Click to Inspect";
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      background: rgba(21, 21, 31, 0.85);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      pointer-events: none;
+      transition: all 0.15s ease;
+    }
+
+    .file-preview {
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+    }
+
+    .tags-palette {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      border-radius: 4px;
+    }
+
+    .tags-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .tag-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      font-weight: 700;
+      width: 56px;
+    }
+
+    .tag-chip {
+      background: rgba(118, 88, 172, 0.08);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 500;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.12s ease;
+    }
+
+    .tag-chip:hover {
+      border-color: var(--accentSmall);
+      background: rgba(118, 88, 172, 0.2);
+    }
+
+    .tag-chip.active {
+      background: var(--accentLarge);
+      color: #fff;
+      border-color: var(--accentLarge);
+      font-weight: 600;
+    }
+
+    .code-wrapper {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .code-output-box {
+      flex: 1;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 6px 8px;
+      font-family: monospace;
+      font-size: 10px;
+      color: var(--accentSmall);
+      max-height: 44px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+
+    .btn-copy {
+      background: none;
+      border: 1px solid var(--accentSmall);
+      color: var(--accentSmall);
+      padding: 6px 12px;
+      font-size: 10px;
+      text-transform: uppercase;
+      cursor: pointer;
+      border-radius: 3px;
+      transition: all 0.15s ease;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .btn-copy:hover {
+      background: var(--accentLarge);
+      color: #fff;
+    }
+
+    .lightbox-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(10, 10, 16, 0.94);
+      backdrop-filter: blur(8px);
+      z-index: 9999;
+      padding: 20px;
+      box-sizing: border-box;
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .lightbox-modal.open {
+      display: flex;
+    }
+
+    .lightbox-header {
+      width: 100%;
+      max-width: 1300px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .lightbox-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--accentBright);
+      text-decoration: none;
+    }
+
+    .lightbox-close {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 18px;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .lightbox-close:hover {
+      color: #fff;
+      background: rgba(255, 82, 82, 0.4);
+      border-color: var(--error);
+    }
+
+    .lightbox-body {
+      display: flex;
+      gap: 20px;
+      width: 100%;
+      max-width: 1300px;
+      height: calc(100vh - 150px);
+      align-items: center;
+      position: relative;
+    }
+
+    .lightbox-image-box {
+      flex: 1;
+      height: 100%;
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      padding: 16px;
+      position: relative;
+    }
+
+    .lightbox-image {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .lightbox-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(26, 26, 38, 0.85);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 24px;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+      z-index: 10;
+      user-select: none;
+    }
+
+    .lightbox-nav:hover {
+      background: var(--accentLarge);
+      color: #fff;
+      border-color: var(--accentLarge);
+    }
+
+    .lightbox-prev {
+      left: 16px;
+    }
+
+    .lightbox-next {
+      right: 16px;
+    }
+
+    .lightbox-sidebar {
+      width: 380px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      box-sizing: border-box;
+      height: 100%;
+      justify-content: center;
+    }
+
+    .awb-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(10, 10, 16, 0.92);
+      backdrop-filter: blur(8px);
+      z-index: 10000;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+
+    .awb-modal.open {
+      display: flex;
+    }
+
+    .awb-box {
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      width: 100%;
+      max-width: 800px;
+      height: 85vh;
+      display: flex;
+      flex-direction: column;
+      padding: 20px;
+      box-sizing: border-box;
+      gap: 14px;
+    }
+
+    .awb-textarea {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--accentSmall);
+      font-family: monospace;
+      font-size: 11px;
+      padding: 12px;
+      resize: none;
+      white-space: pre;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-left">
+      <h1 id="page-heading">Moonspell Magic — File Autofill Hub</h1>
+      <div class="fast-links" id="tools-nav"></div>
+    </div>
+    <div class="header-actions">
+      <div class="mode-switch">
+        <button class="mode-btn active" id="mode-files-btn" onclick="setMode('files')">Files</button>
+        <button class="mode-btn" id="mode-gifs-btn" onclick="setMode('gifs')">GIFs</button>
+      </div>
+      <button class="btn-sync" id="btn-copy-names" style="display:none;" onclick="copyAllFileNames(this)">Copy File Names</button>
+      <button class="btn-sync" id="btn-copy-all" style="display:none;" onclick="copyAllCodes(this)">Copy All Codes</button>
+      <button class="btn-sync awb" id="btn-gen-awb" style="display:none;" onclick="openAwbModal()">Generate AWB Code</button>
+      <button class="btn-sync primary" id="btn-fetch" onclick="fetchUncategorized()">Fetch Uncategorized Files</button>
+    </div>
+  </header>
+
+  <div class="brush-bar">
+    <div class="brush-title"><span>Tag Brush:</span></div>
+    <div class="brush-mode-toggle">
+      <button class="brush-mode-btn active" id="brush-add-btn" onclick="setBrushMode('add')">+ Add</button>
+      <button class="brush-mode-btn" id="brush-remove-btn" onclick="setBrushMode('remove')">- Remove</button>
+    </div>
+    <div class="brush-tags-container" id="brush-palette"></div>
+  </div>
+
+  <div class="hud-container">
+    <div class="hud-monitor">
+      <div class="monitor-header" id="monitor-title">Uncategorized Files Hub</div>
+      <div class="monitor-content" id="monitor-body">
+        <div class="clean-state" id="initial-clean-state">Click "Fetch Uncategorized Files" to pull up to 12 items from the wiki and generate autofill data.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lightbox-modal" id="lightbox" onclick="closeLightboxOnBg(event)">
+    <div class="lightbox-header">
+      <a href="#" target="_blank" class="lightbox-title" id="lightbox-file-title">File Title</a>
+      <button class="lightbox-close" onclick="closeLightbox()">✕</button>
+    </div>
+    <div class="lightbox-body">
+      <button class="lightbox-nav lightbox-prev" onclick="slideLightbox(-1)">‹</button>
+      <div class="lightbox-image-box">
+        <img src="" id="lightbox-img" class="lightbox-image" alt="inspect">
+      </div>
+      <button class="lightbox-nav lightbox-next" onclick="slideLightbox(1)">›</button>
+
+      <div class="lightbox-sidebar">
+        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted);">Quick Adjust Tags</div>
+        <div class="tags-palette" id="lightbox-tags"></div>
+        <div class="code-wrapper">
+          <div class="code-output-box" id="lightbox-code" style="max-height: 90px;"></div>
+          <button class="btn-copy" id="lightbox-copy-btn" onclick="copyLightboxCode()">Copy</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="awb-modal" id="awb-modal" onclick="closeAwbOnBg(event)">
+    <div class="awb-box">
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed var(--border); padding-bottom: 8px;">
+        <span style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--accentBright);">AutoWikiBrowser C# Plugin Code</span>
+        <button class="lightbox-close" onclick="closeAwbModal()">✕</button>
+      </div>
+      <div style="font-size: 11px; color: var(--text-muted);">Paste this code into the ProcessArticle method of your AutoWikiBrowser:</div>
+      <textarea class="awb-textarea" id="awb-code-output" readonly></textarea>
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button class="btn-sync primary" id="btn-copy-awb" onclick="copyAwbCode()">Copy AWB Code</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { WIKI_BASE, CHARACTERS, ITEMS, GIF_TYPES } = window.MM_CONFIG;
+    const { fetchWiki, fetchWikiChunks, escapeHtml, flashButtonText, renderNav } = window.MM_API;
+
+    const MODES = {
+      files: {
+        pageTitle: 'Wiki File Autofill Hub',
+        heading: 'Moonspell Magic — File Autofill Hub',
+        fetchBtn: 'Fetch Uncategorized Files',
+        idleTitle: 'Uncategorized Files Hub',
+        idleText: 'Click "Fetch Uncategorized Files" to pull up to 12 items from the wiki and generate autofill data.',
+        queryLimit: 200,
+        awbSummary: 'Add File Info template via File Autofill Hub',
+        defaultType: 'Other',
+        noPreviewText: 'No Image Preview',
+        filterTitle: () => true,
+        hasTemplate: (wikitext) => wikitext.includes('{{File Info') || wikitext.toLowerCase().includes('{{file info'),
+        createDefaultData: () => ({
+          chars: [],
+          items: [],
+          type: 'Other',
+          source: 'Official Mattel Assets',
+          restoration: 'no'
+        }),
+        parseTemplate: (rawText) => {
+          const chars = [];
+          const items = [];
+          let type = 'Other';
+          let source = 'Official Mattel Assets';
+          let restoration = 'no';
+
+          for (const line of rawText.split('\n')) {
+            const match = line.match(/^\|\s*([a-zA-Z0-9_-]+)\s*=\s*(.*)$/);
+            if (!match) continue;
+            const key = match[1].trim();
+            const val = match[2].replace(/\}\}\s*$/, '').trim();
+            if (/^char[1-5]$/.test(key) && CHARACTERS.includes(val) && !chars.includes(val)) {
+              chars.push(val);
+            }
+            if (/^item[1-4]$/.test(key) && ITEMS.includes(val) && !items.includes(val)) {
+              items.push(val);
+            }
+            if (key === 'type' && GIF_TYPES.includes(val)) type = val;
+            if (key === 'source' && val) source = val;
+            if (key === 'is_restoration' && val) restoration = val;
+          }
+
+          return {
+            chars: chars.slice(0, 5),
+            items: items.slice(0, 4),
+            type,
+            source,
+            restoration
+          };
+        },
+        buildTemplate: (d) => {
+          const cleanChars = d.chars.filter(c => CHARACTERS.includes(c)).slice(0, 5);
+          const cleanItems = d.items.filter(it => ITEMS.includes(it)).slice(0, 4);
+
+          let res = '{{File Info\n';
+          cleanChars.forEach((c, idx) => { res += `| char${idx + 1} = ${c}\n`; });
+          cleanItems.forEach((it, idx) => { res += `| item${idx + 1} = ${it}\n`; });
+          res += `| type = ${d.type}\n`;
+          res += `| source = ${d.source}\n`;
+          res += `| is_restoration = ${d.restoration}\n`;
+          res += '}}';
+          return res;
+        }
+      },
+      gifs: {
+        pageTitle: 'Wiki GIF Autofill Hub',
+        heading: 'Moonspell Magic — GIF Autofill Hub',
+        fetchBtn: 'Fetch Uncategorized GIFs',
+        idleTitle: 'Uncategorized GIFs Hub',
+        idleText: 'Click "Fetch Uncategorized GIFs" to pull up to 12 GIF files from the wiki and generate autofill data.',
+        queryLimit: 500,
+        awbSummary: 'Add GIF Info template via GIF Autofill Hub',
+        defaultType: 'Music Video',
+        noPreviewText: 'No GIF Preview',
+        filterTitle: (title) => /\.gif$/i.test(title.trim()),
+        hasTemplate: (wikitext) => wikitext.includes('{{GIF Info') || wikitext.toLowerCase().includes('{{gif info'),
+        createDefaultData: () => ({
+          casters: [],
+          type: 'Music Video',
+          source: 'Official Mattel Assets'
+        }),
+        parseTemplate: (rawText) => {
+          const casters = [];
+          let type = 'Music Video';
+          let source = 'Official Mattel Assets';
+
+          for (const line of rawText.split('\n')) {
+            const match = line.match(/^\|\s*([a-zA-Z0-9_-]+)\s*=\s*(.*)$/);
+            if (!match) continue;
+            const key = match[1].trim();
+            const val = match[2].replace(/\}\}\s*$/, '').trim();
+            if (/^char[1-5]$/.test(key) && val && CHARACTERS.includes(val) && !casters.includes(val)) {
+              casters.push(val);
+            }
+            if (key === 'type' && GIF_TYPES.includes(val)) type = val;
+            if (key === 'source' && val) source = val;
+          }
+          return { casters: casters.slice(0, 5), type, source };
+        },
+        buildTemplate: (d) => {
+          const cleanCasters = d.casters.filter(c => CHARACTERS.includes(c)).slice(0, 5);
+          let res = '{{GIF Info\n';
+          cleanCasters.forEach((c, idx) => { res += `| char${idx + 1} = ${c}\n`; });
+          res += `| type = ${d.type}\n`;
+          res += `| source = ${d.source}\n`;
+          res += '}}';
+          return res;
+        }
+      }
+    };
+
+    let currentMode = 'files';
+    let loadedFilesData = [];
+    let currentLightboxIndex = null;
+    let activeBrush = null;
+    let brushMode = 'add';
+
+    function getModeCfg() {
+      return MODES[currentMode];
+    }
+
+    function setMode(mode) {
+      if (!MODES[mode] || mode === currentMode) return;
+      currentMode = mode;
+      loadedFilesData = [];
+      activeBrush = null;
+      document.body.classList.remove('brush-active');
+      closeLightbox();
+      closeAwbModal();
+
+      document.getElementById('mode-files-btn').classList.toggle('active', mode === 'files');
+      document.getElementById('mode-gifs-btn').classList.toggle('active', mode === 'gifs');
+
+      const cfg = getModeCfg();
+      document.title = cfg.pageTitle;
+      document.getElementById('page-heading').textContent = cfg.heading;
+      document.getElementById('btn-fetch').textContent = cfg.fetchBtn;
+      document.getElementById('monitor-title').textContent = cfg.idleTitle;
+      document.getElementById('btn-copy-names').style.display = 'none';
+      document.getElementById('btn-copy-all').style.display = 'none';
+      document.getElementById('btn-gen-awb').style.display = 'none';
+      document.getElementById('monitor-body').innerHTML = `<div class="clean-state">${escapeHtml(cfg.idleText)}</div>`;
+
+      initBrushPalette();
+    }
+
+    function initBrushPalette() {
+      const container = document.getElementById('brush-palette');
+      let html = '';
+      if (currentMode === 'files') {
+        CHARACTERS.forEach(c => { html += `<span class="brush-chip" onclick="selectBrush('chars', '${c}', this)">${c}</span>`; });
+        ITEMS.forEach(it => { html += `<span class="brush-chip" onclick="selectBrush('items', '${it}', this)">${it}</span>`; });
+      } else {
+        CHARACTERS.forEach(c => { html += `<span class="brush-chip" onclick="selectBrush('casters', '${c}', this)">${c}</span>`; });
+      }
+      GIF_TYPES.forEach(t => { html += `<span class="brush-chip" onclick="selectBrush('type', '${t}', this)">${t}</span>`; });
+      container.innerHTML = html;
+    }
+
+    function setBrushMode(mode) {
+      brushMode = mode;
+      document.getElementById('brush-add-btn').classList.toggle('active', mode === 'add');
+      document.getElementById('brush-remove-btn').classList.toggle('active', mode === 'remove');
+    }
+
+    function selectBrush(category, value, el) {
+      if (activeBrush && activeBrush.category === category && activeBrush.value === value) {
+        activeBrush = null;
+        document.querySelectorAll('.brush-chip').forEach(c => c.classList.remove('selected'));
+        document.body.classList.remove('brush-active');
+      } else {
+        activeBrush = { category, value };
+        document.querySelectorAll('.brush-chip').forEach(c => c.classList.remove('selected'));
+        el.classList.add('selected');
+        document.body.classList.add('brush-active');
+      }
+    }
+
+    function applyBrushToCard(fileIndex) {
+      if (!activeBrush) {
+        openLightbox(fileIndex);
+        return;
+      }
+      const file = loadedFilesData[fileIndex];
+      const { category, value } = activeBrush;
+      const cfg = getModeCfg();
+      const maxCount = category === 'items' ? 4 : 5;
+
+      if (category === 'type') {
+        if (brushMode === 'add') file.data.type = value;
+        else if (file.data.type === value) file.data.type = cfg.defaultType;
+      } else {
+        const list = file.data[category];
+        const pos = list.indexOf(value);
+        if (brushMode === 'add' && pos === -1 && list.length < maxCount) list.push(value);
+        else if (brushMode === 'remove' && pos > -1) list.splice(pos, 1);
+      }
+      syncCardUI(fileIndex);
+    }
+
+    function removeCard(index) {
+      loadedFilesData.splice(index, 1);
+      if (loadedFilesData.length === 0) {
+        document.getElementById('btn-copy-names').style.display = 'none';
+        document.getElementById('btn-copy-all').style.display = 'none';
+        document.getElementById('btn-gen-awb').style.display = 'none';
+      }
+      renderFilesList();
+      const label = currentMode === 'gifs' ? 'GIFs' : 'files';
+      document.getElementById('monitor-title').textContent = `${getModeCfg().idleTitle} (${loadedFilesData.length} ${label} remaining)`;
+    }
+
+    async function fetchUncategorized() {
+      const cfg = getModeCfg();
+      const titleEl = document.getElementById('monitor-title');
+      const bodyEl = document.getElementById('monitor-body');
+      const copyNamesBtn = document.getElementById('btn-copy-names');
+      const copyAllBtn = document.getElementById('btn-copy-all');
+      const genAwbBtn = document.getElementById('btn-gen-awb');
+
+      titleEl.textContent = 'Scanning Wiki API...';
+      bodyEl.innerHTML = '<div class="clean-state">Fetching uncategorized items list from Fandom...</div>';
+      copyNamesBtn.style.display = 'none';
+      copyAllBtn.style.display = 'none';
+      genAwbBtn.style.display = 'none';
+
+      try {
+        const queryRes = await fetchWiki({
+          action: 'query',
+          list: 'querypage',
+          qppage: 'Uncategorizedimages',
+          qplimit: cfg.queryLimit
+        });
+
+        const results = (queryRes.query && queryRes.query.querypage && queryRes.query.querypage.results) || [];
+        const rawTitles = results.map(p => p.title).filter(title => cfg.filterTitle(title));
+
+        if (rawTitles.length === 0) {
+          titleEl.textContent = cfg.idleTitle;
+          bodyEl.innerHTML = '<div class="clean-state">No uncategorized files found. All systems nominal!</div>';
+          return;
+        }
+
+        titleEl.textContent = 'Verifying real-time category & content status...';
+
+        const checkPages = await fetchWikiChunks(rawTitles, {
+          action: 'query',
+          prop: 'categories|revisions',
+          cllimit: 50,
+          rvprop: 'content',
+          rvslots: 'main'
+        });
+
+        const trulyUncategorizedTitles = [];
+        for (const title of rawTitles) {
+          const pageObj = Object.values(checkPages).find(p => p.title === title);
+          if (pageObj && parseInt(pageObj.pageid, 10) > 0 && !pageObj.hasOwnProperty('missing')) {
+            const categories = pageObj.categories || [];
+            const wikitext = (pageObj.revisions && pageObj.revisions[0] && pageObj.revisions[0].slots && pageObj.revisions[0].slots.main && pageObj.revisions[0].slots.main['*']) || '';
+
+            if (categories.length === 0 && !cfg.hasTemplate(wikitext)) {
+              trulyUncategorizedTitles.push(title);
+              if (trulyUncategorizedTitles.length >= 12) break;
+            }
+          }
+        }
+
+        if (trulyUncategorizedTitles.length === 0) {
+          titleEl.textContent = cfg.idleTitle;
+          bodyEl.innerHTML = '<div class="clean-state">All listed files already have categories/templates applied! Try again later.</div>';
+          return;
+        }
+
+        titleEl.textContent = `Processing ${trulyUncategorizedTitles.length} items via Lua Module...`;
+
+        const infoRes = await fetchWiki({
+          action: 'query',
+          titles: trulyUncategorizedTitles.join('|'),
+          prop: 'imageinfo',
+          iiprop: 'url'
+        });
+
+        const pages = (infoRes.query && infoRes.query.pages) || {};
+        loadedFilesData = [];
+
+        for (const id in pages) {
+          const p = pages[id];
+          if (parseInt(id, 10) > 0 && !p.hasOwnProperty('missing') && cfg.filterTitle(p.title)) {
+            const imgUrl = (p.imageinfo && p.imageinfo[0] && p.imageinfo[0].url) || '';
+            let parsedData = cfg.createDefaultData();
+            try {
+              const expandRes = await fetchWiki({
+                action: 'expandtemplates',
+                text: '{{#invoke:FileAutoFill|fill}}',
+                title: p.title
+              });
+              if (expandRes.expandtemplates && expandRes.expandtemplates['*']) {
+                parsedData = cfg.parseTemplate(expandRes.expandtemplates['*'].trim());
+              }
+            } catch (err) {}
+
+            loadedFilesData.push({ title: p.title, url: imgUrl, data: parsedData });
+          }
+        }
+
+        if (loadedFilesData.length === 0) {
+          titleEl.textContent = cfg.idleTitle;
+          bodyEl.innerHTML = '<div class="clean-state">No valid file data retrieved.</div>';
+          return;
+        }
+
+        renderFilesList();
+        const label = currentMode === 'gifs' ? 'GIFs' : 'files';
+        titleEl.textContent = `${cfg.idleTitle} (${loadedFilesData.length} ${label} loaded)`;
+        copyNamesBtn.style.display = 'inline-flex';
+        copyAllBtn.style.display = 'inline-flex';
+        genAwbBtn.style.display = 'inline-flex';
+
+      } catch (e) {
+        console.error(e);
+        titleEl.textContent = cfg.idleTitle;
+        bodyEl.innerHTML = '<div class="clean-state" style="color: var(--error);">Error fetching data from Fandom API. Check console.</div>';
+      }
+    }
+
+    function buildTagsRowsHtml(fileIndex, fileData) {
+      const typesChips = GIF_TYPES.map(t => `<span class="tag-chip ${fileData.type === t ? 'active' : ''}" onclick="setType(${fileIndex}, '${t}')">${t}</span>`).join('');
+
+      if (currentMode === 'files') {
+        const charsChips = CHARACTERS.map(c => `<span class="tag-chip ${fileData.chars.includes(c) ? 'active' : ''}" onclick="toggleTag(${fileIndex}, 'chars', '${c}', 5)">${c}</span>`).join('');
+        const itemsChips = ITEMS.map(it => `<span class="tag-chip ${fileData.items.includes(it) ? 'active' : ''}" onclick="toggleTag(${fileIndex}, 'items', '${it}', 4)">${it}</span>`).join('');
+        return `
+          <div class="tags-row"><span class="tag-label">Chars:</span>${charsChips}</div>
+          <div class="tags-row"><span class="tag-label">Items:</span>${itemsChips}</div>
+          <div class="tags-row"><span class="tag-label">Type:</span>${typesChips}</div>
+        `;
+      }
+
+      const castersChips = CHARACTERS.map(c => `<span class="tag-chip ${fileData.casters.includes(c) ? 'active' : ''}" onclick="toggleTag(${fileIndex}, 'casters', '${c}', 5)">${c}</span>`).join('');
+      return `
+        <div class="tags-row"><span class="tag-label">Casters:</span>${castersChips}</div>
+        <div class="tags-row"><span class="tag-label">Type:</span>${typesChips}</div>
+      `;
+    }
+
+    function syncCardUI(fileIndex) {
+      const cfg = getModeCfg();
+      const file = loadedFilesData[fileIndex];
+      if (!file) return;
+
+      const tagsEl = document.getElementById(`tags-${fileIndex}`);
+      const codeEl = document.getElementById(`code-${fileIndex}`);
+      if (tagsEl) tagsEl.innerHTML = buildTagsRowsHtml(fileIndex, file.data);
+      if (codeEl) codeEl.textContent = cfg.buildTemplate(file.data);
+      if (currentLightboxIndex === fileIndex) updateLightboxSidebar();
+    }
+
+    function renderFilesList() {
+      const cfg = getModeCfg();
+      const bodyEl = document.getElementById('monitor-body');
+      let cardsHtml = '';
+
+      loadedFilesData.forEach((file, index) => {
+        const codeStr = cfg.buildTemplate(file.data);
+        const fallbackSvg = `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='280' height='180'><rect width='100%' height='100%' fill='%231a1a26'/><text x='50%' y='50%' fill='%236e6789' font-size='12' text-anchor='middle' dominant-baseline='central'>${encodeURIComponent(cfg.noPreviewText)}</text></svg>`;
+
+        cardsHtml += `
+          <div class="file-card">
+            <div class="card-top-row">
+              <a href="${WIKI_BASE}${encodeURIComponent(file.title)}" target="_blank" class="file-title" title="${escapeHtml(file.title)}">${escapeHtml(file.title)}</a>
+              <button class="btn-skip" onclick="removeCard(${index})" title="Skip this file for now">✕ Skip</button>
+            </div>
+            <div class="file-preview-container" onclick="applyBrushToCard(${index})">
+              <img src="${file.url}" class="file-preview" alt="preview" onerror="this.src='${fallbackSvg}'">
+            </div>
+            <div class="tags-palette" id="tags-${index}">
+              ${buildTagsRowsHtml(index, file.data)}
+            </div>
+            <div class="code-wrapper">
+              <div class="code-output-box" id="code-${index}">${escapeHtml(codeStr)}</div>
+              <button class="btn-copy" onclick="copyCode(${index}, this)">Copy</button>
+            </div>
+          </div>
+        `;
+      });
+
+      bodyEl.innerHTML = cardsHtml;
+      if (currentLightboxIndex !== null) updateLightboxSidebar();
+    }
+
+    function toggleTag(fileIndex, category, val, maxCount) {
+      const list = loadedFilesData[fileIndex].data[category];
+      const pos = list.indexOf(val);
+      if (pos > -1) {
+        list.splice(pos, 1);
+      } else if (list.length < maxCount) {
+        list.push(val);
+      }
+      syncCardUI(fileIndex);
+    }
+
+    function setType(fileIndex, val) {
+      loadedFilesData[fileIndex].data.type = val;
+      syncCardUI(fileIndex);
+    }
+
+    function openLightbox(index) {
+      currentLightboxIndex = index;
+      updateLightboxContent();
+      document.getElementById('lightbox').classList.add('open');
+    }
+
+    function updateLightboxContent() {
+      if (currentLightboxIndex === null) return;
+      const item = loadedFilesData[currentLightboxIndex];
+      document.getElementById('lightbox-file-title').textContent = item.title;
+      document.getElementById('lightbox-file-title').href = WIKI_BASE + encodeURIComponent(item.title);
+      document.getElementById('lightbox-img').src = item.url;
+      updateLightboxSidebar();
+    }
+
+    function slideLightbox(direction) {
+      if (currentLightboxIndex === null) return;
+      currentLightboxIndex += direction;
+      if (currentLightboxIndex < 0) currentLightboxIndex = loadedFilesData.length - 1;
+      if (currentLightboxIndex >= loadedFilesData.length) currentLightboxIndex = 0;
+      updateLightboxContent();
+    }
+
+    function updateLightboxSidebar() {
+      if (currentLightboxIndex === null) return;
+      const cfg = getModeCfg();
+      const index = currentLightboxIndex;
+      const file = loadedFilesData[index];
+
+      document.getElementById('lightbox-tags').innerHTML = buildTagsRowsHtml(index, file.data);
+      document.getElementById('lightbox-code').textContent = cfg.buildTemplate(file.data);
+    }
+
+    function closeLightbox() {
+      document.getElementById('lightbox').classList.remove('open');
+      currentLightboxIndex = null;
+    }
+
+    function closeLightboxOnBg(e) {
+      if (e.target.id === 'lightbox') closeLightbox();
+    }
+
+    function copyLightboxCode() {
+      if (currentLightboxIndex === null) return;
+      const btn = document.getElementById('lightbox-copy-btn');
+      navigator.clipboard.writeText(getModeCfg().buildTemplate(loadedFilesData[currentLightboxIndex].data)).then(() => {
+        flashButtonText(btn, 'Copied!');
+      });
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { closeLightbox(); closeAwbModal(); }
+      if (document.getElementById('lightbox').classList.contains('open')) {
+        if (e.key === 'ArrowLeft') slideLightbox(-1);
+        if (e.key === 'ArrowRight') slideLightbox(1);
+      }
+    });
+
+    function copyCode(index, btn) {
+      const box = document.getElementById(`code-${index}`);
+      if (!box) return;
+      navigator.clipboard.writeText(box.textContent).then(() => {
+        flashButtonText(btn, 'Copied!');
+      });
+    }
+
+    function copyAllFileNames(btn) {
+      if (loadedFilesData.length === 0) return;
+      const namesText = loadedFilesData.map(f => f.title).join('\n');
+      navigator.clipboard.writeText(namesText).then(() => {
+        flashButtonText(btn, 'Names Copied!');
+      });
+    }
+
+    function copyAllCodes(btn) {
+      if (loadedFilesData.length === 0) return;
+      const cfg = getModeCfg();
+      const allText = loadedFilesData.map(f => `<!-- ${f.title} -->\n` + cfg.buildTemplate(f.data)).join('\n\n');
+      navigator.clipboard.writeText(allText).then(() => {
+        flashButtonText(btn, 'All Copied!');
+      });
+    }
+
+    function openAwbModal() {
+      if (loadedFilesData.length === 0) return;
+      const cfg = getModeCfg();
+
+      let csharpCode = 'public string ProcessArticle(string ArticleText, string ArticleTitle, int wikiNamespace, out string Summary, out bool Skip)\n{\n';
+      csharpCode += '    Skip = false;\n';
+      csharpCode += `    Summary = "${cfg.awbSummary}";\n\n`;
+      csharpCode += '    if (wikiNamespace == 6)\n    {\n';
+
+      loadedFilesData.forEach((f, idx) => {
+        const safeTitle = f.title.replace(/^File:/i, '').replace(/"/g, '\\"');
+        const templateBlock = cfg.buildTemplate(f.data).replace(/"/g, '\\"').replace(/\n/g, '\\r\\n');
+
+        const keyword = (idx === 0) ? 'if' : 'else if';
+        csharpCode += `        ${keyword} (ArticleTitle.Equals("File:${safeTitle}", StringComparison.OrdinalIgnoreCase))\n`;
+        csharpCode += '        {\n';
+        csharpCode += `            ArticleText = "${templateBlock}\\r\\n\\r\\n" + ArticleText;\n`;
+        csharpCode += '        }\n';
+      });
+
+      csharpCode += '    }\n\n';
+      csharpCode += '    return ArticleText;\n}';
+
+      document.getElementById('awb-code-output').value = csharpCode;
+      document.getElementById('awb-modal').classList.add('open');
+    }
+
+    function closeAwbModal() {
+      document.getElementById('awb-modal').classList.remove('open');
+    }
+
+    function closeAwbOnBg(e) {
+      if (e.target.id === 'awb-modal') closeAwbModal();
+    }
+
+    function copyAwbCode() {
+      const textarea = document.getElementById('awb-code-output');
+      const btn = document.getElementById('btn-copy-awb');
+      if (!textarea) return;
+      textarea.select();
+      navigator.clipboard.writeText(textarea.value).then(() => {
+        flashButtonText(btn, 'Copied!');
+      });
+    }
+
+    window.onload = () => {
+      renderNav('tools-nav');
+      initBrushPalette();
+    };
+  </script>
+</body>
+</html>

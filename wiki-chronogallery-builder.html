@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wiki Gallery Builder</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="stylesheet" href="theme.css">
+  <script src="config.js"></script>
+  <script src="wiki-api.js"></script>
+  <style>
+    .control-panel {
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .btn {
+      background: var(--accentLarge);
+      border: 1px solid var(--accentLarge);
+      color: #fff;
+      padding: 6px 14px;
+      font-size: 11px;
+      text-transform: uppercase;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      opacity: 0.9;
+    }
+
+    .btn-secondary {
+      background: none;
+      border: 1px solid var(--accentSmall);
+      color: var(--accentSmall);
+    }
+
+    .btn-secondary:hover {
+      background: var(--accentLarge);
+      color: #fff;
+    }
+
+    .monitor-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+    }
+
+    textarea {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--accentSmall);
+      font-family: monospace;
+      font-size: 11px;
+      padding: 12px;
+      resize: none;
+      white-space: pre;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-left">
+      <h1>Wiki Gallery Builder</h1>
+      <div class="fast-links" id="tools-nav"></div>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-secondary" id="btn-copy" style="display:none;">Copy Code</button>
+    </div>
+  </header>
+
+  <div class="control-panel">
+    <div class="control-group">
+      <label for="section-select">Section:</label>
+      <select id="section-select">
+        <option value="music">Music Videos</option>
+        <option value="events">Events Photos</option>
+      </select>
+    </div>
+
+    <div class="control-group">
+      <label for="category-select">Category:</label>
+      <select id="category-select"></select>
+    </div>
+
+    <button class="btn" onclick="startSorting()">Build Galleries</button>
+    <p style="margin: 0; font-size: 11px; color: var(--text-muted);">Status: <span id="status">Waiting to start...</span></p>
+  </div>
+
+  <div class="hud-container">
+    <div class="hud-monitor">
+      <div class="monitor-header">
+        <span>Result (Wiki Code)</span>
+      </div>
+      <div class="monitor-content" id="monitor-body">
+        <div class="clean-state">Select section and category, then click the build button.</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const {
+      CHARACTERS,
+      ITEMS,
+      CHRONO_TARGETS,
+      TABBER_SHORTCUTS
+    } = window.MM_CONFIG;
+    const {
+      fetchWiki,
+      getCategoryMembers,
+      stripFilePrefix,
+      flashButtonText,
+      renderNav
+    } = window.MM_API;
+
+    function initCategorySelect() {
+      const selectEl = document.getElementById('category-select');
+      const allCategories = [...CHARACTERS, ...ITEMS];
+      selectEl.innerHTML = allCategories
+        .map(cat => `<option value="${cat}">${cat}</option>`)
+        .join('');
+    }
+
+    async function getAllFilesFromCategory(categoryName) {
+      const rawMembers = await getCategoryMembers(categoryName, 'file');
+      return new Set(rawMembers.map(title => stripFilePrefix(title)));
+    }
+
+    async function getChronologicalImages(page) {
+      const data = await fetchWiki({
+        action: 'query',
+        prop: 'revisions',
+        titles: page,
+        rvprop: 'content',
+        rvslots: 'main'
+      });
+      const pages = (data.query && data.query.pages) || {};
+      const pageObj = Object.values(pages)[0];
+      if (!pageObj || pageObj.missing) return [];
+
+      const revisions = pageObj.revisions || [];
+      const text = (revisions[0] && revisions[0].slots && revisions[0].slots.main && revisions[0].slots.main['*']) ||
+        (revisions[0] && revisions[0]['*']) ||
+        '';
+      const collectedFiles = [];
+
+      const fileBoxRegex = /\{\{[^}]*?\|\s*(?:image|file)\s*=\s*([^|}\n]+)/gi;
+      let match;
+      while ((match = fileBoxRegex.exec(text)) !== null) {
+        const f = match[1].trim();
+        if (f) collectedFiles.push(stripFilePrefix(f));
+      }
+
+      const fileLinkRegex = /\[\[\s*(?:File|Image|Файл)\s*:\s*([^|\]\n]+)[^\]]*\]\]/gi;
+      while ((match = fileLinkRegex.exec(text)) !== null) {
+        const f = match[1].trim();
+        if (f) collectedFiles.push(stripFilePrefix(f));
+      }
+
+      const galleryMatches = [...text.matchAll(/<gallery[^>]*>([\s\S]*?)<\/gallery>/gi)];
+      galleryMatches.forEach(m => {
+        const lines = m[1].split('\n');
+        lines.forEach(line => {
+          const clean = line.trim();
+          if (clean && !clean.startsWith('<!--') && !clean.startsWith('{')) {
+            const f = clean.split('|')[0].trim();
+            if (f) collectedFiles.push(stripFilePrefix(f));
+          }
+        });
+      });
+
+      return [...new Set(collectedFiles)];
+    }
+
+    async function startSorting() {
+      const section = document.getElementById('section-select').value;
+      const cat = document.getElementById('category-select').value;
+      const status = document.getElementById('status');
+      const bodyEl = document.getElementById('monitor-body');
+
+      status.textContent = 'Fetching category files...';
+      const files = await getAllFilesFromCategory(cat);
+
+      if (files.size === 0) {
+        status.textContent = 'Error!';
+        bodyEl.innerHTML = `<div class="clean-state">No files found in category: ${cat}.</div>`;
+        return;
+      }
+
+      const pagesList = CHRONO_TARGETS[section] || [];
+      const outputSections = [];
+
+      for (const title of pagesList) {
+        status.textContent = `Processing page: ${title}...`;
+
+        const mainFiles = await getChronologicalImages(title);
+        const galleryFiles = await getChronologicalImages(`${title}/Gallery`);
+        const combined = [...new Set([...mainFiles, ...galleryFiles])];
+
+        const sorted = combined.filter(f => files.has(stripFilePrefix(f)));
+
+        if (sorted.length > 0) {
+          const tabName = TABBER_SHORTCUTS[title] || title;
+
+          let sectionText = `${tabName}=\n<gallery>\n`;
+          sorted.forEach(f => {
+            sectionText += `${f}\n`;
+          });
+          sectionText += '</gallery>';
+          outputSections.push(sectionText);
+        }
+      }
+
+      if (outputSections.length === 0) {
+        status.textContent = 'Done';
+        bodyEl.innerHTML = `<div class="clean-state">No files from category "${cat}" found in this section.</div>`;
+        return;
+      }
+
+      const headerName = section === 'music' ? '== Music Video Images ==' : '== Event Photos ==';
+      const finalResult = `${headerName}\n<tabber>\n` + outputSections.join('\n|-|\n') + '\n</tabber>';
+
+      bodyEl.innerHTML = `<textarea id="result-textarea" readonly>${finalResult}</textarea>`;
+      document.getElementById('btn-copy').style.display = 'inline-flex';
+      status.textContent = 'Done!';
+    }
+
+    document.getElementById('btn-copy').onclick = (e) => {
+      const ta = document.getElementById('result-textarea');
+      const btn = e.currentTarget;
+      if (!ta || !btn) return;
+      ta.select();
+      navigator.clipboard.writeText(ta.value).then(() => {
+        flashButtonText(btn, 'Copied!');
+      });
+    };
+
+    window.onload = () => {
+      renderNav('tools-nav');
+      initCategorySelect();
+    };
+  </script>
+</body>
+</html>

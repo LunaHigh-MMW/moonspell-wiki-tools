@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gallery Integrity Diagnostic Terminal</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="stylesheet" href="theme.css">
+  <script src="config.js"></script>
+  <script src="wiki-api.js"></script>
+  <style>
+    .hud-menu {
+      width: 320px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      overflow-y: auto;
+    }
+
+    .menu-item {
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      border-radius: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .menu-item.hidden {
+      display: none;
+    }
+
+    .menu-item.active {
+      border-color: var(--accentLarge);
+      background: var(--overlay);
+    }
+
+    .menu-item .title {
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-right: 8px;
+    }
+
+    .status-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--error);
+      background: rgba(255, 82, 82, 0.1);
+      flex-shrink: 0;
+    }
+
+    .status-badge.loading {
+      color: var(--accentSmall);
+      background: none;
+    }
+
+    .monitor-content {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .mismatch-group {
+      margin-bottom: 20px;
+    }
+
+    .mismatch-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--accentSmall);
+      margin-bottom: 8px;
+    }
+
+    .grid-output {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 8px;
+    }
+
+    .grid-output a {
+      font-size: 12px;
+      color: var(--accentSmall);
+      text-decoration: none;
+      padding: 6px 10px;
+      background: rgba(118, 88, 172, 0.04);
+      border-radius: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      border: 1px solid transparent;
+    }
+
+    .grid-output a:hover {
+      color: var(--accentBright);
+      background: var(--overlay);
+      border-color: var(--accentLarge);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-left">
+      <h1>Moonspell Magic Wiki — Gallery Integrity Terminal</h1>
+      <div class="fast-links" id="tools-nav"></div>
+    </div>
+    <button class="btn-sync" onclick="refreshAll()">Scan Galleries</button>
+  </header>
+
+  <div class="hud-container">
+
+    <div class="hud-menu" id="main-menu"></div>
+
+    <div class="hud-monitor">
+      <div class="monitor-header" id="monitor-title">Analyzing Assets...</div>
+      <div class="monitor-content" id="monitor-body">
+        <div class="clean-state">Initializing Core...</div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const {
+      WIKI_BASE,
+      CHARACTERS,
+      ITEMS,
+      QUIZ_STRUCTURE_ENTITIES
+    } = window.MM_CONFIG;
+    const {
+      fetchWiki,
+      getCategoryMembers,
+      getPagesImages,
+      normalizeTitle,
+      renderNav
+    } = window.MM_API;
+
+    const MENU_KEYS = [...CHARACTERS, ...ITEMS, 'events_images', 'items_images'];
+    const storage = {};
+    let quizCategoryPromise = null;
+    let currentTab = null;
+
+    [...CHARACTERS, ...ITEMS].forEach(name => {
+      storage[name] = {
+        title: name,
+        type: 'entity',
+        missingInCategory: [],
+        missingInGallery: [],
+        missingInQuizGallery: [],
+        missingInQuizCategory: [],
+        loaded: false
+      };
+    });
+
+    storage['events_images'] = {
+      title: 'Event Images vs Events Pages',
+      menuLabel: 'Event Images vs Events',
+      groupLabel: 'In Category:Event Images, but not used on any Event page',
+      type: 'pages_diff',
+      missingInPages: [],
+      loaded: false
+    };
+
+    storage['items_images'] = {
+      title: 'Items Images vs Items Pages',
+      menuLabel: 'Items Images vs Items',
+      groupLabel: 'In Category:Items Images, but not used on any Item page',
+      type: 'pages_diff',
+      missingInPages: [],
+      loaded: false
+    };
+
+    function slugify(text) {
+      return text.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    }
+
+    function initMenu() {
+      const menuEl = document.getElementById('main-menu');
+      menuEl.innerHTML = '';
+
+      MENU_KEYS.forEach(key => {
+        const entry = storage[key];
+        const item = document.createElement('div');
+        item.className = 'menu-item';
+        item.id = `mod-${slugify(key)}`;
+        item.onclick = () => switchTab(key);
+        item.innerHTML = `
+          <span class="title">${entry.menuLabel || entry.title}</span>
+          <span class="status-badge loading">...</span>
+        `;
+        menuEl.appendChild(item);
+      });
+    }
+
+    function getTabDiffCount(key) {
+      const data = storage[key];
+      if (!data) return 0;
+      if (data.type === 'entity') {
+        return (
+          data.missingInCategory.length +
+          data.missingInGallery.length +
+          data.missingInQuizGallery.length +
+          data.missingInQuizCategory.length
+        );
+      }
+      return data.missingInPages.length;
+    }
+
+    function setBadgeCount(key, count) {
+      storage[key].loaded = true;
+      const el = document.getElementById(`mod-${slugify(key)}`);
+      if (!el) return;
+      const badge = el.querySelector('.status-badge');
+
+      if (count === 0) {
+        el.classList.add('hidden');
+      } else {
+        el.classList.remove('hidden');
+        badge.className = 'status-badge';
+        badge.textContent = `${count}`;
+      }
+
+      autoSelectTab();
+    }
+
+    function autoSelectTab() {
+      const allLoaded = Object.values(storage).every(s => s.loaded);
+      if (!allLoaded) return;
+
+      const activeKeys = MENU_KEYS.filter(key => getTabDiffCount(key) > 0);
+
+      if (activeKeys.length === 0) {
+        currentTab = null;
+        document.getElementById('monitor-title').textContent = 'System Status';
+        document.getElementById('monitor-body').innerHTML = `
+          <div class="clean-state">
+            <div class="icon">✓</div>
+            All assets, galleries, and pages are in sync.<br>No action required.
+          </div>`;
+        return;
+      }
+
+      if (!currentTab || !activeKeys.includes(currentTab)) {
+        switchTab(activeKeys[0]);
+      } else {
+        renderMonitor();
+      }
+    }
+
+    function switchTab(key) {
+      currentTab = key;
+      document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
+      const activeEl = document.getElementById(`mod-${slugify(key)}`);
+      if (activeEl) activeEl.classList.add('active');
+      renderMonitor();
+    }
+
+    function renderMismatchGroup(title, items) {
+      if (!items || items.length === 0) return '';
+      return `
+        <div class="mismatch-group">
+          <div class="mismatch-title">${title}</div>
+          <div class="grid-output">
+            ${items.map(item => `<a href="${WIKI_BASE}${encodeURIComponent(item)}" target="_blank" title="${item}">${item}</a>`).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderMonitor() {
+      if (!currentTab) return;
+      const titleEl = document.getElementById('monitor-title');
+      const bodyEl = document.getElementById('monitor-body');
+      const data = storage[currentTab];
+
+      if (data.type === 'entity') {
+        titleEl.textContent = `Discrepancies: ${data.title}`;
+        bodyEl.innerHTML =
+          renderMismatchGroup(`In Gallery Page, but missing from Category:${data.title}`, data.missingInCategory) +
+          renderMismatchGroup(`In Category:${data.title}, but missing from Gallery Page`, data.missingInGallery) +
+          renderMismatchGroup(`In ${data.title}/Gallery/Quiz Break, but missing from Category:Quiz_Break_Screenshots or Category:${data.title}`, data.missingInQuizGallery) +
+          renderMismatchGroup(`Has both Category:${data.title} and Category:Quiz Break Screenshots, but missing from ${data.title}/Gallery/Quiz Break`, data.missingInQuizCategory);
+        return;
+      }
+
+      titleEl.textContent = `Discrepancies: ${data.title}`;
+      bodyEl.innerHTML = renderMismatchGroup(data.groupLabel, data.missingInPages);
+    }
+
+    async function getGalleryFiles(galleryPageTitle) {
+      try {
+        const data = await fetchWiki({
+          action: 'query',
+          titles: galleryPageTitle,
+          prop: 'images',
+          imlimit: 500
+        });
+
+        const pages = (data.query && data.query.pages) || {};
+        for (const id in pages) {
+          if (pages[id].images) {
+            return pages[id].images.map(img => img.title);
+          }
+        }
+      } catch (e) {
+        console.error('Error fetching gallery page:', galleryPageTitle, e);
+      }
+      return [];
+    }
+
+    function getQuizCategoryFilesCached() {
+      if (!quizCategoryPromise) {
+        quizCategoryPromise = getCategoryMembers('Quiz Break Screenshots', 'file');
+      }
+      return quizCategoryPromise;
+    }
+
+    async function scanEntity(name) {
+      const galleryPageTitle = `${name}/Gallery`;
+      const quizGalleryPageTitle = `${name}/Gallery/Quiz Break`;
+      const hasQuizStructure = QUIZ_STRUCTURE_ENTITIES.includes(name);
+
+      const promises = [
+        getCategoryMembers(name, 'file'),
+        getGalleryFiles(galleryPageTitle)
+      ];
+
+      if (hasQuizStructure) {
+        promises.push(getGalleryFiles(quizGalleryPageTitle));
+        promises.push(getQuizCategoryFilesCached());
+      }
+
+      const results = await Promise.all(promises);
+      const categoryFiles = results[0];
+      const galleryFiles = results[1];
+      const quizGalleryFiles = hasQuizStructure ? results[2] : [];
+      const quizCategoryFiles = hasQuizStructure ? results[3] : [];
+
+      const categoryMap = new Map();
+      categoryFiles.forEach(f => categoryMap.set(normalizeTitle(f), f));
+
+      const galleryMap = new Map();
+      galleryFiles.forEach(f => galleryMap.set(normalizeTitle(f), f));
+
+      const quizGalleryMap = new Map();
+      quizGalleryFiles.forEach(f => quizGalleryMap.set(normalizeTitle(f), f));
+
+      const quizCategoryMap = new Map();
+      quizCategoryFiles.forEach(f => quizCategoryMap.set(normalizeTitle(f), f));
+
+      const missingInCategory = [];
+      const missingInGallery = [];
+      const missingInQuizGallery = [];
+      const missingInQuizCategory = [];
+
+      galleryMap.forEach((originalName, key) => {
+        if (!categoryMap.has(key)) {
+          missingInCategory.push(originalName);
+        }
+      });
+
+      categoryMap.forEach((originalName, key) => {
+        if (hasQuizStructure && categoryMap.has(key) && quizCategoryMap.has(key)) {
+          if (!quizGalleryMap.has(key)) {
+            missingInQuizCategory.push(originalName);
+          }
+        } else if (!galleryMap.has(key) && !quizGalleryMap.has(key)) {
+          missingInGallery.push(originalName);
+        }
+      });
+
+      if (hasQuizStructure) {
+        quizGalleryMap.forEach((originalName, key) => {
+          if (!categoryMap.has(key) || !quizCategoryMap.has(key)) {
+            missingInQuizGallery.push(originalName);
+          }
+        });
+      }
+
+      missingInCategory.sort();
+      missingInGallery.sort();
+      missingInQuizGallery.sort();
+      missingInQuizCategory.sort();
+
+      storage[name].missingInCategory = missingInCategory;
+      storage[name].missingInGallery = missingInGallery;
+      storage[name].missingInQuizGallery = missingInQuizGallery;
+      storage[name].missingInQuizCategory = missingInQuizCategory;
+
+      setBadgeCount(name, getTabDiffCount(name));
+    }
+
+    async function scanImagesVsPages(imageCategory, pageCategory, storageKey) {
+      const [imageFiles, targetPages] = await Promise.all([
+        getCategoryMembers(imageCategory, 'file'),
+        getCategoryMembers(pageCategory, 'page')
+      ]);
+      const usedImages = await getPagesImages(targetPages);
+
+      const usedMap = new Set();
+      usedImages.forEach(img => usedMap.add(normalizeTitle(img)));
+
+      const missingInPages = imageFiles.filter(file => !usedMap.has(normalizeTitle(file)));
+      missingInPages.sort();
+
+      storage[storageKey].missingInPages = missingInPages;
+      setBadgeCount(storageKey, missingInPages.length);
+    }
+
+    function refreshAll() {
+      currentTab = null;
+      quizCategoryPromise = null;
+      initMenu();
+      document.getElementById('monitor-title').textContent = 'Scanning...';
+      document.getElementById('monitor-body').innerHTML = '<div class="clean-state">Comparing assets and pages...</div>';
+
+      Object.keys(storage).forEach(key => {
+        storage[key].loaded = false;
+      });
+
+      [...CHARACTERS, ...ITEMS].forEach(entity => scanEntity(entity));
+      scanImagesVsPages('Event Images', 'Events', 'events_images');
+      scanImagesVsPages('Items Images', 'Items', 'items_images');
+    }
+
+    window.onload = () => {
+      renderNav('tools-nav');
+      refreshAll();
+    };
+  </script>
+</body>
+</html>

@@ -70,6 +70,60 @@ window.MM_API = {
     return usedImages;
   },
 
+  async syncConfigFromLuaModule() {
+    const fallbackFileTypes = [
+      'Site', 'Comparison', 'Art', 'Logo', 'Doll', 'Promo',
+      'Concept', 'Event', 'Quiz Break', 'Brain Break', 'Music Video', 'Other'
+    ];
+    if (!window.MM_CONFIG.FILE_TYPES) {
+      window.MM_CONFIG.FILE_TYPES = fallbackFileTypes.slice();
+    }
+
+    try {
+      const data = await window.MM_API.fetchWiki({
+        action: 'query',
+        titles: 'Module:FileAutoFill',
+        prop: 'revisions',
+        rvprop: 'content',
+        rvslots: 'main'
+      });
+
+      const pages = (data.query && data.query.pages) || {};
+      const pageObj = Object.values(pages)[0];
+      const luaCode =
+        (pageObj && pageObj.revisions && pageObj.revisions[0] && pageObj.revisions[0].slots && pageObj.revisions[0].slots.main && pageObj.revisions[0].slots.main['*']) ||
+        (pageObj && pageObj.revisions && pageObj.revisions[0] && pageObj.revisions[0]['*']) ||
+        '';
+
+      if (!luaCode) return;
+
+      const extractLuaTableValues = (tableName) => {
+        const blockMatch = luaCode.match(new RegExp(`local\\s+${tableName}\\s*=\\s*\\{([\\s\\S]*?)\\n\\s*\\}`));
+        if (!blockMatch) return [];
+        const values = [];
+        const entryRegex = /\["[^"]+"\]\s*=\s*"([^"]+)"/g;
+        let m;
+        while ((m = entryRegex.exec(blockMatch[1])) !== null) {
+          if (!values.includes(m[1])) values.push(m[1]);
+        }
+        return values;
+      };
+
+      const parsedChars = extractLuaTableValues('characterMap');
+      if (parsedChars.length > 0) {
+        window.MM_CONFIG.CHARACTERS = parsedChars.sort();
+      }
+
+      const parsedTypes = extractLuaTableValues('typeMap');
+      if (parsedTypes.length > 0) {
+        if (!parsedTypes.includes('Other')) parsedTypes.push('Other');
+        window.MM_CONFIG.FILE_TYPES = parsedTypes;
+      }
+    } catch (e) {
+      console.error('Failed to sync config from Module:FileAutoFill:', e);
+    }
+  },
+
   normalizeTitle(title) {
     return String(title).toLowerCase().replace(/_/g, ' ').trim();
   },

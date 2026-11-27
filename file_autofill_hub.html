@@ -583,8 +583,11 @@
   </div>
 
   <script>
-    const { WIKI_BASE, CHARACTERS, ITEMS, GIF_TYPES } = window.MM_CONFIG;
-    const { fetchWiki, fetchWikiChunks, escapeHtml, flashButtonText, renderNav } = window.MM_API;
+    const { WIKI_BASE, ITEMS, GIF_TYPES } = window.MM_CONFIG;
+    const { fetchWiki, fetchWikiChunks, escapeHtml, flashButtonText, renderNav, syncConfigFromLuaModule } = window.MM_API;
+
+    const getCharacters = () => window.MM_CONFIG.CHARACTERS || [];
+    const getFileTypes = () => window.MM_CONFIG.FILE_TYPES || GIF_TYPES;
 
     const MODES = {
       files: {
@@ -597,19 +600,21 @@
         awbSummary: 'Add File Info template via File Autofill Hub',
         defaultType: 'Other',
         noPreviewText: 'No Image Preview',
-        filterTitle: () => true,
+        filterTitle: (title) => !/\.(gif|mp3|ogg|wav|flac|m4a)$/i.test(title.trim()),
         hasTemplate: (wikitext) => wikitext.includes('{{File Info') || wikitext.toLowerCase().includes('{{file info'),
         createDefaultData: () => ({
           chars: [],
           items: [],
-          type: 'Other',
+          types: ['Other'],
           source: 'Official Mattel Assets',
           restoration: 'no'
         }),
         parseTemplate: (rawText) => {
+          const charsList = getCharacters();
+          const fileTypesList = getFileTypes();
           const chars = [];
           const items = [];
-          let type = 'Other';
+          let types = [];
           let source = 'Official Mattel Assets';
           let restoration = 'no';
 
@@ -618,13 +623,17 @@
             if (!match) continue;
             const key = match[1].trim();
             const val = match[2].replace(/\}\}\s*$/, '').trim();
-            if (/^char[1-5]$/.test(key) && CHARACTERS.includes(val) && !chars.includes(val)) {
+            if (/^char[1-5]$/.test(key) && charsList.includes(val) && !chars.includes(val)) {
               chars.push(val);
             }
             if (/^item[1-4]$/.test(key) && ITEMS.includes(val) && !items.includes(val)) {
               items.push(val);
             }
-            if (key === 'type' && GIF_TYPES.includes(val)) type = val;
+            if (key === 'type' && val) {
+              types = val.split(',')
+                .map(t => t.trim())
+                .filter(t => fileTypesList.includes(t));
+            }
             if (key === 'source' && val) source = val;
             if (key === 'is_restoration' && val) restoration = val;
           }
@@ -632,19 +641,23 @@
           return {
             chars: chars.slice(0, 5),
             items: items.slice(0, 4),
-            type,
+            types: types.length > 0 ? types : ['Other'],
             source,
             restoration
           };
         },
         buildTemplate: (d) => {
-          const cleanChars = d.chars.filter(c => CHARACTERS.includes(c)).slice(0, 5);
+          const charsList = getCharacters();
+          const fileTypesList = getFileTypes();
+          const cleanChars = d.chars.filter(c => charsList.includes(c)).slice(0, 5);
           const cleanItems = d.items.filter(it => ITEMS.includes(it)).slice(0, 4);
+          const cleanTypes = d.types.filter(t => fileTypesList.includes(t));
+          const typeValue = cleanTypes.length > 0 ? cleanTypes.join(', ') : 'Other';
 
           let res = '{{File Info\n';
           cleanChars.forEach((c, idx) => { res += `| char${idx + 1} = ${c}\n`; });
           cleanItems.forEach((it, idx) => { res += `| item${idx + 1} = ${it}\n`; });
-          res += `| type = ${d.type}\n`;
+          res += `| type = ${typeValue}\n`;
           res += `| source = ${d.source}\n`;
           res += `| is_restoration = ${d.restoration}\n`;
           res += '}}';
@@ -669,6 +682,7 @@
           source: 'Official Mattel Assets'
         }),
         parseTemplate: (rawText) => {
+          const charsList = getCharacters();
           const casters = [];
           let type = 'Music Video';
           let source = 'Official Mattel Assets';
@@ -678,7 +692,7 @@
             if (!match) continue;
             const key = match[1].trim();
             const val = match[2].replace(/\}\}\s*$/, '').trim();
-            if (/^char[1-5]$/.test(key) && val && CHARACTERS.includes(val) && !casters.includes(val)) {
+            if (/^char[1-5]$/.test(key) && val && charsList.includes(val) && !casters.includes(val)) {
               casters.push(val);
             }
             if (key === 'type' && GIF_TYPES.includes(val)) type = val;
@@ -687,7 +701,8 @@
           return { casters: casters.slice(0, 5), type, source };
         },
         buildTemplate: (d) => {
-          const cleanCasters = d.casters.filter(c => CHARACTERS.includes(c)).slice(0, 5);
+          const charsList = getCharacters();
+          const cleanCasters = d.casters.filter(c => charsList.includes(c)).slice(0, 5);
           let res = '{{GIF Info\n';
           cleanCasters.forEach((c, idx) => { res += `| char${idx + 1} = ${c}\n`; });
           res += `| type = ${d.type}\n`;
@@ -735,14 +750,17 @@
 
     function initBrushPalette() {
       const container = document.getElementById('brush-palette');
+      const charsList = getCharacters();
       let html = '';
+
       if (currentMode === 'files') {
-        CHARACTERS.forEach(c => { html += `<span class="brush-chip" onclick="selectBrush('chars', '${c}', this)">${c}</span>`; });
+        charsList.forEach(c => { html += `<span class="brush-chip" onclick="selectBrush('chars', '${c}', this)">${c}</span>`; });
         ITEMS.forEach(it => { html += `<span class="brush-chip" onclick="selectBrush('items', '${it}', this)">${it}</span>`; });
+        getFileTypes().forEach(t => { html += `<span class="brush-chip" onclick="selectBrush('types', '${t}', this)">${t}</span>`; });
       } else {
-        CHARACTERS.forEach(c => { html += `<span class="brush-chip" onclick="selectBrush('casters', '${c}', this)">${c}</span>`; });
+        charsList.forEach(c => { html += `<span class="brush-chip" onclick="selectBrush('casters', '${c}', this)">${c}</span>`; });
+        GIF_TYPES.forEach(t => { html += `<span class="brush-chip" onclick="selectBrush('type', '${t}', this)">${t}</span>`; });
       }
-      GIF_TYPES.forEach(t => { html += `<span class="brush-chip" onclick="selectBrush('type', '${t}', this)">${t}</span>`; });
       container.innerHTML = html;
     }
 
@@ -773,12 +791,15 @@
       const file = loadedFilesData[fileIndex];
       const { category, value } = activeBrush;
       const cfg = getModeCfg();
-      const maxCount = category === 'items' ? 4 : 5;
 
       if (category === 'type') {
         if (brushMode === 'add') file.data.type = value;
         else if (file.data.type === value) file.data.type = cfg.defaultType;
+      } else if (category === 'types') {
+        toggleFileType(fileIndex, value, brushMode);
+        return;
       } else {
+        const maxCount = category === 'items' ? 4 : 5;
         const list = file.data[category];
         const pos = list.indexOf(value);
         if (brushMode === 'add' && pos === -1 && list.length < maxCount) list.push(value);
@@ -913,11 +934,12 @@
     }
 
     function buildTagsRowsHtml(fileIndex, fileData) {
-      const typesChips = GIF_TYPES.map(t => `<span class="tag-chip ${fileData.type === t ? 'active' : ''}" onclick="setType(${fileIndex}, '${t}')">${t}</span>`).join('');
+      const charsList = getCharacters();
 
       if (currentMode === 'files') {
-        const charsChips = CHARACTERS.map(c => `<span class="tag-chip ${fileData.chars.includes(c) ? 'active' : ''}" onclick="toggleTag(${fileIndex}, 'chars', '${c}', 5)">${c}</span>`).join('');
+        const charsChips = charsList.map(c => `<span class="tag-chip ${fileData.chars.includes(c) ? 'active' : ''}" onclick="toggleTag(${fileIndex}, 'chars', '${c}', 5)">${c}</span>`).join('');
         const itemsChips = ITEMS.map(it => `<span class="tag-chip ${fileData.items.includes(it) ? 'active' : ''}" onclick="toggleTag(${fileIndex}, 'items', '${it}', 4)">${it}</span>`).join('');
+        const typesChips = getFileTypes().map(t => `<span class="tag-chip ${fileData.types.includes(t) ? 'active' : ''}" onclick="toggleFileType(${fileIndex}, '${t}')">${t}</span>`).join('');
         return `
           <div class="tags-row"><span class="tag-label">Chars:</span>${charsChips}</div>
           <div class="tags-row"><span class="tag-label">Items:</span>${itemsChips}</div>
@@ -925,7 +947,8 @@
         `;
       }
 
-      const castersChips = CHARACTERS.map(c => `<span class="tag-chip ${fileData.casters.includes(c) ? 'active' : ''}" onclick="toggleTag(${fileIndex}, 'casters', '${c}', 5)">${c}</span>`).join('');
+      const castersChips = charsList.map(c => `<span class="tag-chip ${fileData.casters.includes(c) ? 'active' : ''}" onclick="toggleTag(${fileIndex}, 'casters', '${c}', 5)">${c}</span>`).join('');
+      const typesChips = GIF_TYPES.map(t => `<span class="tag-chip ${fileData.type === t ? 'active' : ''}" onclick="setGifType(${fileIndex}, '${t}')">${t}</span>`).join('');
       return `
         <div class="tags-row"><span class="tag-label">Casters:</span>${castersChips}</div>
         <div class="tags-row"><span class="tag-label">Type:</span>${typesChips}</div>
@@ -988,7 +1011,30 @@
       syncCardUI(fileIndex);
     }
 
-    function setType(fileIndex, val) {
+    function toggleFileType(fileIndex, val, forcedMode = null) {
+      const list = loadedFilesData[fileIndex].data.types;
+      const pos = list.indexOf(val);
+      const shouldAdd = forcedMode ? forcedMode === 'add' : pos === -1;
+
+      if (shouldAdd) {
+        if (val === 'Other') {
+          loadedFilesData[fileIndex].data.types = ['Other'];
+        } else {
+          const otherIdx = list.indexOf('Other');
+          if (otherIdx > -1) list.splice(otherIdx, 1);
+          if (!list.includes(val)) list.push(val);
+        }
+      } else if (pos > -1) {
+        list.splice(pos, 1);
+      }
+
+      if (loadedFilesData[fileIndex].data.types.length === 0) {
+        loadedFilesData[fileIndex].data.types = ['Other'];
+      }
+      syncCardUI(fileIndex);
+    }
+
+    function setGifType(fileIndex, val) {
       loadedFilesData[fileIndex].data.type = val;
       syncCardUI(fileIndex);
     }
@@ -1121,8 +1167,9 @@
       });
     }
 
-    window.onload = () => {
+    window.onload = async () => {
       renderNav('tools-nav');
+      await syncConfigFromLuaModule();
       initBrushPalette();
     };
   </script>
